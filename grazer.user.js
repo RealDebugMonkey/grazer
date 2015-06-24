@@ -1,19 +1,11 @@
 // ==UserScript==
 // @name         grazer
-// @namespace    https://github.com/RealDebugMonkey/ZeachCobbler
-// @updateURL    http://bit.do/ZeachCobblerJS
-// @downloadURL  http://bit.do/ZeachCobblerJS
+// @namespace    https://github.com/RealDebugMonkey/grazer
+// @updateURL    https://github.com/RealDebugMonkey/grazer/raw/Test/grazer.user.js
+// @downloadURL  https://github.com/RealDebugMonkey/grazer/raw/Test/grazer.user.js
 // @contributer  The White Light -- You rock the maths.
-// @contributer  Angal - For the UI additions and server select code
-// @contributer  Gjum - Bug fixes
-// @contributer  Agariomods.com (and Electronoob) for the innovative imgur style skins
-// @contributer  Agariomods.com again for maintaining the best extended repo out there.
-// @codefrom     http://incompetech.com/music/royalty-free/most/kerbalspaceprogram.php
-// @codefrom     mikeyk730 stats screen - https://greasyfork.org/en/scripts/10154-agar-chart-and-stats-screen
-// @codefrom     debug text output derived from Apostolique's bot code -- https://github.com/Apostolique/Agar.io-bot
-// @codefrom     minimap derived from Gamer Lio's bot code -- https://github.com/leomwu/agario-bot
-// @version      0.13.0
-// @description  Agario powerups
+// @version      0.20.0
+// @description  Acid Grazer
 // @author       DebugMonkey
 // @match        http://agar.io
 // @match        https://agar.io
@@ -23,13 +15,11 @@
 // ==/UserScript==
 console.log("Grazer starting");
 
-// dynamically named objects used:
 //      G - user Ids
 //      p - user Points
 //      A - nodes by ID
 //      v - items
 //      s$$0 - websocket
-// dynamically named object properties used:
 //      D - nx
 //      F - ny
 //
@@ -153,6 +143,7 @@ $.getScript("https://cdnjs.cloudflare.com/ajax/libs/lodash.js/3.9.3/lodash.min.j
     {
         if(!isPlayerAlive()){
             isGrazing = false;
+            setAcid(isGrazing);
             return;
         }
 
@@ -164,6 +155,7 @@ $.getScript("https://cdnjs.cloudflare.com/ajax/libs/lodash.js/3.9.3/lodash.min.j
             var target = findFoodToEat(getSelectedBlob(),getItems());
             if(-1 == target){
                 isGrazing = false;
+                setAcid(isGrazing);
                 return;
             }
             grazingTargetID = target.id;
@@ -231,6 +223,7 @@ $.getScript("https://cdnjs.cloudflare.com/ajax/libs/lodash.js/3.9.3/lodash.min.j
          if('G'.charCodeAt(0) === d.keyCode && isPlayerAlive()) {
             grazingTargetID = null;
             isGrazing = !isGrazing;
+             setAcid(isGrazing);
         }
     }
 
