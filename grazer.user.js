@@ -1,4 +1,239 @@
+// ==UserScript==
+// @name         grazer
+// @namespace    https://github.com/RealDebugMonkey/ZeachCobbler
+// @updateURL    http://bit.do/ZeachCobblerJS
+// @downloadURL  http://bit.do/ZeachCobblerJS
+// @contributer  The White Light -- You rock the maths.
+// @contributer  Angal - For the UI additions and server select code
+// @contributer  Gjum - Bug fixes
+// @contributer  Agariomods.com (and Electronoob) for the innovative imgur style skins
+// @contributer  Agariomods.com again for maintaining the best extended repo out there.
+// @codefrom     http://incompetech.com/music/royalty-free/most/kerbalspaceprogram.php
+// @codefrom     mikeyk730 stats screen - https://greasyfork.org/en/scripts/10154-agar-chart-and-stats-screen
+// @codefrom     debug text output derived from Apostolique's bot code -- https://github.com/Apostolique/Agar.io-bot
+// @codefrom     minimap derived from Gamer Lio's bot code -- https://github.com/leomwu/agario-bot
+// @version      0.13.0
+// @description  Agario powerups
+// @author       DebugMonkey
+// @match        http://agar.io
+// @match        https://agar.io
+// @require      https://cdnjs.cloudflare.com/ajax/libs/lodash.js/3.9.3/lodash.min.js
+// @user-agent   Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.13 (KHTML, like Gecko)
+// @grant        none
+// ==/UserScript==
+console.log("Grazer starting");
+
+// dynamically named objects used:
+//      G - user Ids
+//      p - user Points
+//      A - nodes by ID
+//      v - items
+//      s$$0 - websocket
+// dynamically named object properties used:
+//      D - nx
+//      F - ny
+//
+$.getScript("https://cdnjs.cloudflare.com/ajax/libs/lodash.js/3.9.3/lodash.min.js");
 (function (g, m) {
+
+    function getWebSocket(){return s$$0;}
+    function getMyIDs(){return G;}
+    function getMyPoints(){return p;}
+    function getNodes(){return A;}
+    function getItems(){return v;}
+    function getBlobNx(){return "D";}
+    function getBlobNy(){return "F";}
+
+    var isGrazing = false;
+    var grazingTargetID;
+    var Large = 1.25;
+
+    // ======================   Utility code    ==================================================================
+    function getSelectedBlob(){
+        return getMyPoints()[0];
+    }
+    function isPlayerAlive(){
+        return !!getMyPoints().length;
+    }
+    function sendMouseUpdate(ws, mouseX2,mouseY2) {
+
+        if (ws != null && ws.readyState == ws.OPEN) {
+            z0 = new ArrayBuffer(21);
+            z1 = new DataView(z0);
+            z1.setUint8(0, 16);
+            z1.setFloat64(1, mouseX2, true);
+            z1.setFloat64(9, mouseY2, true);
+            z1.setUint32(17, 0, true);
+            ws.send(z0);
+        }
+    }
+    function getMass(x){
+        return x*x/100
+    }
+    function lineDistance( point1, point2 ){
+        var xs = point2[getBlobNx()] - point1[getBlobNx()];
+        var ys = point2[getBlobNy()] - point1[getBlobNy()];
+
+        return Math.sqrt( xs * xs + ys * ys );
+    }
+
+    // ======================   Grazing code    ==================================================================
+
+
+    function checkCollision(myBlob, targetBlob, potential){
+        // Calculate distance to target
+        var dtt = lineDistance(myBlob, targetBlob);
+        // Slope and normal slope
+        var sl = (targetBlob[getBlobNy()]-myBlob[getBlobNy()])/(targetBlob[getBlobNx()]-myBlob[getBlobNx()]);
+        var ns = -1/sl;
+        // y-int of ptt
+        var yint1 = myBlob[getBlobNy()] - myBlob[getBlobNx()]*sl;
+        if(!lineDistance(myBlob, potential) < dtt){
+            // get second y-int
+            var yint2 = potential[getBlobNy()] - potential[getBlobNx()] * ns;
+            var interx = (yint2-yint1)/(sl-ns);
+            var intery = sl*interx + yint1;
+            var pseudoblob = {"D": interx, "F": intery};
+            if (((targetBlob[getBlobNx()] < myBlob[getBlobNx()] && targetBlob[getBlobNx()] < interx && interx < myBlob[getBlobNx()]) ||
+                (targetBlob[getBlobNx()] > myBlob[getBlobNx()] && targetBlob[getBlobNx()] > interx && interx > myBlob[getBlobNx()])) &&
+                ((targetBlob[getBlobNy()] < myBlob[getBlobNy()] && targetBlob[getBlobNy()] < intery && intery < myBlob[getBlobNy()]) ||
+                (targetBlob[getBlobNy()] > myBlob[getBlobNy()] && targetBlob[getBlobNy()] > intery && intery > myBlob[getBlobNy()]))){
+                if(lineDistance(potential, pseudoblob) < potential.size+100){
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+    function isSafeTarget(myBlob, targetBlob, threats){
+
+        var isSafe = true;
+        // check target against each enemy to make sure no collision is possible
+        threats.forEach(function (threat){
+            if(isSafe) {
+                if(threat.d) {
+                    //todo once we are big enough, our center might still be far enough
+                    // away that it doesn't cross virus but we still pop
+                    if(checkCollision(myBlob, targetBlob, threat) )  {
+                        isSafe = false;
+                    }
+                }
+                else {
+                    if ( checkCollision(myBlob, targetBlob, threat) || lineDistance(threat, targetBlob) <= threat.size + 200) {
+                        isSafe = false;
+                    }
+                }
+            }
+        });
+        return isSafe;
+    }
+
+    // All blobs that aren't mine
+    function getOtherBlobs(){
+        return _.omit(getNodes(), getMyIDs());
+    }
+
+    // Gets any item which is a threat including bigger players and viruses
+    function getThreats(blobArray, myMass) {
+        // start by omitting all my IDs
+        // then look for viruses smaller than us and blobs substantially bigger than us
+        return _.filter(getOtherBlobs(), function(possibleThreat){
+            var possibleThreatMass = getMass(possibleThreat.size);
+
+            if(possibleThreat.d) {
+                // Viruses are only a threat if we are bigger than them
+                return myMass >= possibleThreatMass;
+            }
+            // other blobs are only a threat if they cross the 'Large' threshhold
+            return possibleThreatMass > myMass * Large;
+        });
+    }
+
+    function doGrazing(ws)
+    {
+        if(!isPlayerAlive()){
+            isGrazing = false;
+            return;
+        }
+
+        grazingTargetID = null;
+
+        var target;
+        if(!getNodes().hasOwnProperty(grazingTargetID))
+        {
+            var target = findFoodToEat(getSelectedBlob(),getItems());
+            if(-1 == target){
+                isGrazing = false;
+                return;
+            }
+            grazingTargetID = target.id;
+        }
+        else
+        {
+            target = getNodes()[grazingTargetID];
+        }
+        sendMouseUpdate(ws, target.x + Math.random(), target.y + Math.random());
+    }
+
+    function findFoodToEat(cell, blobArray){
+        var edibles = [];
+        var densityResults = [];
+        var threats = getThreats(blobArray, getMass(cell.size));
+        blobArray.forEach(function (element){
+            var distance = lineDistance(cell, element);
+            element.isSafeTarget = null;
+            if( getMass(element.size) <= (getMass(cell.size) * 0.4) && !element.d){
+                if(isSafeTarget(cell, element, threats)){
+                    edibles.push({"distance":distance, "id":element.id});
+                    element.isSafeTarget = true;
+                }
+                else {
+                    element.isSafeTarget = false;
+                }
+            }
+        });
+        edibles = edibles.sort(function(x,y){return x.distance<y.distance?-1:1;});
+        edibles.forEach(function (element){
+            var density = calcFoodDensity(getNodes()[element.id], blobArray)/(element.distance*2);
+            densityResults.push({"density":density, "id":element.id});
+        });
+        if(0 === densityResults.length){
+            console.log("No target found");
+            //return avoidThreats(threats, k[0]);
+            return -1;
+        }
+        var target = densityResults.sort(function(x,y){return x.density>y.density?-1:1;});
+        //console.log("Choosing blob (" + target[0].id + ") with density of : "+ target[0].density);
+        return getNodes()[target[0].id];
+    }
+
+    function calcFoodDensity(cell2, blobArray2){
+        var MaxDistance2 = 250;
+        var pelletCount = 0;
+        blobArray2.forEach(function (element2){
+            var distance2 = lineDistance(cell2, element2);
+            var cond1 = getMass(element2.size) <= (getMass(getSelectedBlob().size) * 0.4);
+            var cond2 = distance2 < MaxDistance2;
+            var cond3 = !element2.d;
+            //console.log(cond1 + " " + cond2 + " " + cond3);
+            if( cond1 && cond2 && cond3 && cell2.isSafeTarget ){
+                pelletCount +=1;
+            }
+        });
+        return pelletCount;
+    }
+    function customKeyDownEvents(d)
+    {
+        if(jQuery("#overlays").is(':visible')){
+            return;
+        }
+
+         if('G'.charCodeAt(0) === d.keyCode && isPlayerAlive()) {
+            grazingTargetID = null;
+            isGrazing = !isGrazing;
+        }
+    }
+
     function Wa() {
         pa = true;
         Ca();
@@ -58,6 +293,7 @@
             if(27 == d.keyCode) {
                 Fa(true);
             }
+            /*new*/customKeyDownEvents(d)
         };
         g.onkeyup = function (d) {
             if(32 == d.keyCode) {
@@ -607,6 +843,7 @@
     }
 
     function N() {
+        /*new*/if(isGrazing){ doGrazing(getWebSocket()); return; }
         var a;
         if(ya()) {
             a = V - q / 2;
